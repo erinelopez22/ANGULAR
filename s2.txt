@@ -1,0 +1,381 @@
+USE [Bookkeeping]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_snap_Tagging]    Script Date: 7/14/2020 1:26:19 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[sp_snap_Tagging]
+		@mode  Varchar(100),
+		@WhsCode Varchar(15),
+		@DocEntry INT,
+		@SS_DocEntry INT,
+		@Type Varchar(100),
+		@HasFormula INT
+AS
+BEGIN
+	IF @mode = 'SelectSS_Desc'
+		BEGIN TRY
+			
+			SELECT B.DocEntry, B.Descrip,(SELECT Count(*) FROM Bookkeeping.[dbo].[SS_TAGGING] A
+			WHERE A.SS_DocEntry =b.DocEntry AND A.WhsCode='028') AS TAGGED, b.ColBot
+			FROM Bookkeeping.dbo.SSTEMPLATE b
+			LEFT JOIN Bookkeeping.dbo.[SS_TAGGING] a 
+			ON b.DocEntry=a.SS_DocEntry
+			where b.WhsCode=@WhsCode
+			GROUP BY  B.DocEntry, B.Descrip, b.ColBot
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+    ELSE IF @mode = 'SelectAllTagged'
+		BEGIN TRY
+		(SELECT A.DocEntry,
+				B.TBType,
+				B.Dscpt
+		 FROM Bookkeeping.[dbo].[SS_TAGGING] A
+			 INNER JOIN Bookkeeping.dbo.snap_Templates B
+				 ON A.DocEntry = B.DocEntry
+					AND A.WhsCode = B.WhsCode
+		 WHERE A.SS_DocEntry = @SS_DocEntry
+			   AND A.WhsCode = @WhsCode)
+		UNION ALL
+		(SELECT A.DocEntry,
+				A.Type,
+				B.Descrip AS Dscpt
+		 FROM Bookkeeping.[dbo].[SS_TAGGING] A
+			 INNER JOIN Bookkeeping.dbo.SSTEMPLATE B
+				 ON A.DocEntry = B.DocEntry
+					AND A.WhsCode = B.WhsCode
+		  WHERE A.SS_DocEntry = @SS_DocEntry
+			   AND A.WhsCode = @WhsCode)
+
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'getDesc'
+		BEGIN TRY
+			SELECT t0.DocEntry,t1.TBType,t1.Dscpt 
+			FROM  Bookkeeping.[dbo].[SS_TAGGING] t0 
+			INNER JOIN Bookkeeping.dbo.snap_Templates t1
+			ON t0.DocEntry=t1.DocEntry AND T0.WhsCode=t1.WhsCode
+			WHERE t0.SS_DocEntry=@SS_DocEntry AND t0.WhsCode=@WhsCode
+UNION ALL
+SELECT t0.DocEntry,t0.Type, t1.Descrip AS Dscpt 
+			FROM  Bookkeeping.[dbo].[SS_TAGGING] t0 
+			INNER JOIN Bookkeeping.dbo.SSTEMPLATE t1
+			ON t0.DocEntry=t1.DocEntry AND T0.WhsCode=t1.WhsCode
+			WHERE t0.SS_DocEntry=@SS_DocEntry AND t0.WhsCode=@WhsCode;
+
+			
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'IS_DESC'
+		BEGIN TRY
+			SELECT DocEntry, 'IS' AS RptType, Dscpt FROM Bookkeeping.dbo.snap_Templates 
+			WHERE  WhsCode=@WhsCode AND BegFormula='' 
+			AND Dscpt !='' AND EndFormula !='H'
+			AND TBType='IS' 
+			
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'BS_DESC'
+		BEGIN TRY
+			SELECT DocEntry,'BS' AS RptType, Dscpt FROM Bookkeeping.dbo.snap_Templates 
+			WHERE  WhsCode=@WhsCode AND BegFormula='' 
+			AND Dscpt !='' AND EndFormula !='H'
+			AND TBType='BS' 
+			
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'SS_DESC'
+		BEGIN TRY
+						
+			SELECT DocEntry,'SS' AS RptType, Descrip AS Dscpt FROM Bookkeeping.dbo.SSTEMPLATE 
+			WHERE  WhsCode=@WhsCode 
+			
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'AddTagged'
+		begin
+		IF @HasFormula=1
+			BEGIN TRY
+			BEGIN TRAN
+					UPDATE Bookkeeping.[dbo].SSTEMPLATE SET ColBot= '1'
+					WHERE DocEntry=@SS_DocEntry AND WhsCode=@WhsCode
+			COMMIT TRAN
+			END TRY  
+			BEGIN CATCH  
+			ROLLBACK;
+			END CATCH;
+		ELSE IF @HasFormula=0
+			BEGIN TRY
+			BEGIN TRAN
+				INSERT INTO Bookkeeping.[dbo].[SS_TAGGING]  
+					(SS_DocEntry,DocEntry,WhsCode,Type,HasFormula)VALUES(@SS_DocEntry,@DocEntry,@WhsCode,@Type,@HasFormula)
+			
+					UPDATE Bookkeeping.[dbo].SSTEMPLATE SET ColBot= '0'
+					WHERE DocEntry=@SS_DocEntry AND WhsCode=@WhsCode
+			COMMIT TRAN
+			END TRY  
+			BEGIN CATCH  
+			ROLLBACK;
+			END CATCH;
+		
+		end
+	ELSE IF @mode = 'RemoveTagged'
+		BEGIN TRY
+		BEGIN TRAN
+				DELETE FROM Bookkeeping.[dbo].[SS_TAGGING]  
+				WHERE WhsCode=@WhsCode AND SS_DocEntry=@SS_DocEntry AND DocEntry=@DocEntry AND Type=@Type
+		COMMIT TRAN
+		END TRY  
+		BEGIN CATCH  
+		ROLLBACK;
+		END CATCH;
+END;
+
+
+USE [Bookkeeping]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_snapAddFS]    Script Date: 7/14/2020 1:26:56 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[sp_snapAddFS]
+    @Amount NUMERIC(10, 2) = 0,
+    @mode NVARCHAR(100) = NULL,
+    @WhsCode NVARCHAR(100) = NULL,
+    @Yr INT = 0,
+    @Pd INT = 0,
+    @Total NUMERIC(10, 2) = 0,
+    @DateCreated DATETIME = NULL,
+    @CreatedBy NVARCHAR(100) = NULL,
+    @DocEntry INT = 0,
+    @TBType NVARCHAR(100) = NULL,
+	 @DocNum INT = 0
+AS
+BEGIN
+    IF @mode = 'CheckData'
+	BEGIN TRY 
+    
+        SELECT DocNum
+        FROM [Bookkeeping].[dbo].[SSFSH]
+        WHERE [WhsCode] = @WhsCode
+              AND [Yr] = @Yr
+              AND [Pd] = @Pd
+    END TRY  
+	BEGIN CATCH  
+    -- Execute error retrieval routine.  
+    
+	END CATCH;
+    ELSE IF @mode = 'AddHeader'
+    BEGIN TRY
+	BEGIN TRAN
+        INSERT INTO [Bookkeeping].[dbo].[SSFSH]
+        (
+            [WhsCode],
+            [Yr],
+            [Pd],
+            [Total],
+            [DateCreated],
+            [CreatedBy]
+        )
+        VALUES
+        (@WhsCode, @Yr, @Pd, @Total, @DateCreated, @CreatedBy);
+		COMMIT Tran
+    END TRY  
+	BEGIN CATCH  
+    rollback;
+	END CATCH;
+    ELSE IF @mode = 'AddDetail'
+    BEGIN TRY
+	BEGIN TRAN
+        INSERT INTO Bookkeeping.dbo.SSFS1
+        (
+            DocNum,
+            DocEntry,
+            TBType,
+            Amount
+        )
+        VALUES
+        (
+            @DocNum, @DocEntry, @TBType, @Amount);
+
+    COMMIT Tran
+    END TRY  
+	BEGIN CATCH  
+    rollback;
+	END CATCH;
+END;
+
+
+USE [Bookkeeping]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_snapFS]    Script Date: 7/14/2020 1:27:29 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[sp_snapFS]
+	@Year AS INT,
+	@pd AS INT,
+	@WhsCode AS VARCHAR(5)
+AS
+BEGIN
+	
+	SELECT t0.WhsCode,t1.dscpt,t2.blk,t0.Yr,t0.Pd,t0.BegAmt,t0.CurrAmt,t0.EndAmt,t0.DocDate,t1.DocEntry,t1.TBType
+	FROM bookkeeping.dbo.BKFS t0 
+	INNER JOIN bookkeeping.dbo.TBDesc t1 ON t0.DocEntry=t1.DocEntry
+	INNER JOIN HPCOMMON.dbo.SAPSet t2 ON t0.WhsCode=t2.code
+	AND t0.WhsCode=t1.WhsCode
+	WHERE CONVERT(DATE,  CONVERT(NVARCHAR,t0.Pd) +'/'+ '1'+ '/'+ CONVERT(NVARCHAR,t0.yr))
+    = CONVERT(DATE,  CONVERT(NVARCHAR,@pd) +'/'+ '1'+ '/'+ CONVERT(NVARCHAR,@Year)) 
+    AND t0.WhsCode=@WhsCode  ORDER BY  t1.DocEntry ASC 
+END
+
+
+USE [Bookkeeping]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_snapMain]    Script Date: 7/14/2020 1:27:55 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[sp_snapMain]
+		@mode  Varchar(100)='',
+		@WhsCode Varchar(5)='',
+		@Descrip Varchar(100)='',
+		@RowNo INT=NULL,
+		@Formula Varchar(100)='',
+		@TotalFormula Varchar(100)='',
+		@FontStyle Varchar(100)='',
+		@DescripFC Varchar(100)='',
+		@ColFC Varchar(100)='',
+		@TotalFC Varchar(100)='',
+		@DescripBG Varchar(100)='',
+		@ColBG Varchar(100)='',
+		@TotalBG Varchar(100)='',
+		@ColTop Varchar(100)='',
+		@ColBot Varchar(100)='',
+		@WhsCodeFrom Varchar(100)=''
+AS
+BEGIN
+	IF @mode = 'AddSnapTemp'
+		BEGIN TRY
+		BEGIN TRAN		
+		DECLARE @DocEntryTemp INTEGER=0;
+
+		DECLARE @DocEntry INTEGER=0;
+
+		SET @DocEntryTemp = (SELECT MAX(DocEntry)+1 AS DocEntry FROM Bookkeeping.dbo.SSTEMPLATE)
+		IF @DocEntryTemp IS NULL
+		SET	@DocEntry=(SELECT MAX(DocEntry)+1 AS DocEntry FROM snap_Templates )
+		ELSE IF @DocEntryTemp IS NOT NULL
+		SET	@DocEntry=@DocEntryTemp
+		
+		INSERT INTO Bookkeeping.dbo.SSTEMPLATE
+										(
+											DocEntry,
+											WhsCode,
+											Descrip,
+											RowNo,
+											Formula,
+											TotalFormula,
+											FontStyle,
+											DescripFC,
+											ColFC,
+											TotalFC,
+											DescripBG,
+											ColBG,
+											TotalBG,
+											ColTop,
+											ColBot
+										)
+											VALUES
+											(@DocEntry, @WhsCode, @Descrip, @RowNo, @Formula, @TotalFormula, @FontStyle, @DescripFC, @ColFC, @TotalFC, @DescripBG,
+											 @ColBG, @TotalBG, @ColTop, @ColBot);
+
+		COMMIT Tran
+		END TRY  
+		BEGIN CATCH  
+		rollback;
+		END CATCH;
+    ELSE IF @mode = 'SelectPerBranch'
+		BEGIN TRY
+		BEGIN TRAN
+			SELECT * FROM Bookkeeping.dbo.SSTEMPLATE WHERE WhsCode=@WhsCode;
+		END TRY  
+		BEGIN CATCH  
+		rollback;
+		END CATCH;
+	ELSE IF @mode = 'SelectAllBranch'
+		BEGIN TRY
+			SELECT 'Temp'= CASE WHEN b.WhsCode IS NOT NULL
+									   THEN ''
+									   ELSE 'N/A'
+								   END,
+						a.Code,a.blk
+					FROM HPCOMMON.dbo.SAPSet a
+					LEFT JOIN Bookkeeping.dbo.SSTEMPLATE b 
+					ON b.WhsCode=a.Code
+					GROUP BY b.WhsCode,a.Code,a.blk
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'SelectDulicate'
+		BEGIN TRY
+			SELECT b.WhsCode FROM Bookkeeping.dbo.SSTEMPLATE b 
+					where b.WhsCode=@WhsCode;
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'DeleteTempates'
+		BEGIN TRY
+			DELETE FROM Bookkeeping.dbo.SSTEMPLATE
+					where WhsCode=@WhsCode;
+		END TRY  
+		BEGIN CATCH  
+		
+		END CATCH;
+	ELSE IF @mode = 'DuplicateTemplates'
+		BEGIN TRY
+		BEGIN TRAN
+			INSERT INTO Bookkeeping.dbo.SSTEMPLATE
+				SELECT DocEntry,
+					   @WhsCode,
+					   Descrip,
+					   RowNo,
+					   Formula,
+					   TotalFormula,
+					   FontStyle,
+					   DescripFC,
+					   ColFC,
+					   TotalFC,
+					   DescripBG,
+					   ColBG,
+					   TotalBG,
+					   ColTop,
+					   ColBot
+				FROM Bookkeeping.dbo.SSTEMPLATE
+				WHERE WhsCode=@WhsCodeFrom;
+		COMMIT Tran
+		END TRY  
+		BEGIN CATCH  
+		ROLLBACK;
+		END CATCH;
+	
+		
+	END;
