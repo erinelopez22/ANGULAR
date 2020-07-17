@@ -1,0 +1,2 @@
+ <h1 class="h3 mb-0 font-weight-normal text-success" style="margin-top: 30px;"><img src="resources/download.png" width="86" class="img-responsive rounded mb-0 hvr-bob mr-2" alt="Hi-Precision Diagnostics" title="Hi-Precision Diagnostics"><i class="fa fa-crosshairs text-success"></i> SNAPSHOT</h1>
+                        <div class="form-group" style="margin-top: 20px;">
